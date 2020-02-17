@@ -207,7 +207,7 @@ def phase1_5(A, b, c, x_bfs):
     return A_prim, b_prim, c_prim, d
 
 
-def lp(A, b, c):
+def lp(A, b, c, d0):
     """
     maximize c * x 
     such that
@@ -236,7 +236,7 @@ def lp(A, b, c):
 
     x_opt = x_opt[:num_vars] - x_opt[-num_vars:]
     x_opt = x_opt + x_bfs
-    return x_opt, val, 0 # optimal
+    return x_opt, val + d0, 0 # optimal
 
 
 def main():
