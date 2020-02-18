@@ -23,11 +23,19 @@ def pivot(T, pc, pr):
 def select_pivot_column(z):
     """
     Pick one variable that increases the objective
-    """
 
     for i, zi in enumerate(z):
-        if zi > 0:
             return i + 1
+    else:
+        return None
+    """
+    tol = 1e-8
+
+    positive = np.where(z > tol)[0]
+    if len(positive):
+        #print("len(positive):", len(positive))
+        #return positive[0] + 1 #
+        return np.random.choice(positive) + 1
     else:
         return None
 
@@ -37,13 +45,14 @@ def select_pivot_row(Tc, b):
     Which ceiling are we going to hit our head in first?
     """
 
+    tol = 1e-8
+
     #print(Tc)
     if all(Tc <= 0): # no roof over our head - to the stars!
-        return None
+        return None, 0
 
-    ratios = [bi / Tci if Tci > 0 else np.inf for Tci, bi in zip(Tc, b)]
-    #print("ratios:", ratios)
-    return np.argmin(ratios) + 1
+    ratios = [bi / Tci if Tci > tol else np.inf for Tci, bi in zip(Tc, b)]
+    return np.argmin(ratios) + 1, min(ratios)
 
 
 def collect_solution(T, basic):
@@ -99,22 +108,39 @@ def phase2(A, b, c):
     #dbg(T)
 
     basic = list(range(num_slack))
+    #print("slack vars in base0:", len(np.where(np.array(basic) < num_slack)[0]))
 
-    while True:
+    #while True:
+    for i in range(100000):
+        b = T[1:, -1]
+        if np.any(b < -1e-8):
+            print(b)
+            raise Exception("b < 0")
+
         pc = select_pivot_column(T[0, 1:])
         if pc is None: # found optimum
+            print("found optimum")
             break
         #print("pc:", pc)
+        #print(pc, "{0:.5f}".format(T[0, pc]))
 
-        pr = select_pivot_row(T[1:, pc], T[1:, -1])
+        pr, pivot_dist = select_pivot_row(T[1:, pc], T[1:, -1])
         if pr is None: # unbounded
             return None, np.inf
+        #if pivot_dist == 0.0: # will not increase objective
+        #    continue
         #print("pr:", pr)
 
         T = pivot(T, pc, pr)
         #print(T)
 
         basic[pr - 1] = pc
+        #print("objective: {}".format(-T[0, -1]))
+        #[print(row) for row in T]
+        #print(T.shape)
+        #print("slack vars in base:", len(np.where(np.array(basic) < num_slack)[0]))
+    else:
+        print("iteration limit reached")
 
     return collect_solution(T, basic), -T[0, -1]
 
@@ -128,6 +154,7 @@ def phase1(A, b, c):
     num_constr, num_vars = A.shape
     I = np.eye(num_constr)
 
+    dbg("b:\n", b)
     c_ext = np.concatenate([np.zeros([num_vars]), -1 * np.ones([num_constr])])
     A_ext = np.hstack([A, -I])
     z_init = -b * (b < 0)
@@ -207,13 +234,16 @@ def phase1_5(A, b, c, x_bfs):
     return A_prim, b_prim, c_prim, d
 
 
-def lp(A, b, c, d0):
+def lp(A, b, c, d0=0):
     """
     maximize c * x 
     such that
     Ax <= b
     x >= 0
     """
+    print(A.shape)
+    print(b.shape)
+    print(c.shape)
 
     num_constr, num_vars = A.shape
 
@@ -244,7 +274,7 @@ def main():
     debug = False
 
     all_tests = ["basic", "basic_2", "basic_3",
-                 "basic_4", "basic_5", "basic_6"
+                 "basic_4", "basic_5", "basic_6",
                   "infeasible", "infeasible_2",
                   "unbounded"]
 
