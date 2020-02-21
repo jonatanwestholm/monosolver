@@ -181,6 +181,8 @@ def phase1(A, b, c):
 
     return x_bfs[:num_vars]
 
+
+'''
 def phase1_5(A, b, c, x_bfs):
     """
     Given a basic feasible solution x_bfs,
@@ -232,6 +234,7 @@ def phase1_5(A, b, c, x_bfs):
     d = np.dot(c, x_bfs)
 
     return A_prim, b_prim, c_prim, d
+'''
 
 
 def lp(A, b, c, d0=0):
