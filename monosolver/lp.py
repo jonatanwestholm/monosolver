@@ -71,7 +71,7 @@ def collect_solution(T, basic):
     return solution
 
 
-def phase2(A, b, c):
+def lp(A, b, c):
     """
     maximize c * x 
     such that
@@ -110,8 +110,8 @@ def phase2(A, b, c):
     basic = list(range(num_slack))
     #print("slack vars in base0:", len(np.where(np.array(basic) < num_slack)[0]))
 
-    #while True:
-    for i in range(100000):
+    #for i in range(100000):
+    while True:
         b = T[1:, -1]
         if np.any(b < -1e-8):
             print(b)
@@ -142,7 +142,31 @@ def phase2(A, b, c):
     else:
         print("iteration limit reached")
 
-    return collect_solution(T, basic), -T[0, -1]
+    return collect_solution(T, basic), -T[0, -1], basic
+
+
+'''
+def phase1(A, b):
+    """
+    find a feasible solution to 
+    Ax <= b
+    x >= 0
+    """
+
+    sgn = 2 * (np.sign(b) >= 0) - 1  # np.sign(0) = 0, need 1
+    A_prim = sgn.T * A
+    b_prim = sgn * b
+    c_prim = np.sum(A_prim, axis=1)
+    d_prim = np.sum(b_prim)
+
+    x_bfs, val, basic = phase2(A_prim, b_prim, c_prim)
+
+    tol = 1e-8
+    if val + d_prim < -tol: # infeasible
+        return None
+
+    return basic
+
 
 def phase1(A, b, c):
     """
@@ -180,6 +204,7 @@ def phase1(A, b, c):
         return None
 
     return x_bfs[:num_vars]
+'''
 
 
 '''
@@ -234,7 +259,6 @@ def phase1_5(A, b, c, x_bfs):
     d = np.dot(c, x_bfs)
 
     return A_prim, b_prim, c_prim, d
-'''
 
 
 def lp(A, b, c, d0=0):
@@ -270,6 +294,7 @@ def lp(A, b, c, d0=0):
     x_opt = x_opt[:num_vars] - x_opt[-num_vars:]
     x_opt = x_opt + x_bfs
     return x_opt, val + d0, 0 # optimal
+'''
 
 
 def main():
