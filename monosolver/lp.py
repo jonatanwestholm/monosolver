@@ -29,7 +29,7 @@ def select_pivot_column(z):
     else:
         return None
     """
-    tol = 1e-8
+    tol = 0 #1e-8
 
     positive = np.where(z > tol)[0]
     if len(positive):
@@ -106,14 +106,16 @@ def lp(A, b, c):
     z_s = np.zeros([num_slack])
     z_v = np.zeros([num_vars])
 
-    T1 = np.hstack([z_s, z_v, np.array([0])])
-    T2 = np.hstack([z_s,   c, np.array([0])])
-    T3 = np.hstack([np.eye(num_slack), A, b])
+    T1 = np.hstack([z_s, z_v, z_v, np.array([0])])
+    T2 = np.hstack([z_s,   c,  -c, np.array([0])])
+    T3 = np.hstack([np.eye(num_slack), A, -A, b])
     T3 = T3 * sgn
     #print(T3)
+    #print(b)
 
     #print(T3[:, num_slack:-1] * (1 - b_sgn))
     #print(T3[:, -1] * (1 - b_sgn).T)
+    #print(np.sum(T3[:, num_slack:-1] * (1 - b_sgn), axis=0))
     T1[num_slack:-1] = np.sum(T3[:, num_slack:-1] * (1 - b_sgn), axis=0)
     T1[-1] = np.sum(T3[:, -1] * (1 - b_sgn).T)
     #exit(0)
@@ -129,6 +131,8 @@ def lp(A, b, c):
     basic = list(range(num_slack))
     #print("slack vars in base0:", len(np.where(np.array(basic) < num_slack)[0]))
 
+    tol = 1e-8
+
     #for i in range(100000):
     while True:
         #print(T)
@@ -141,7 +145,7 @@ def lp(A, b, c):
         pc = select_pivot_column(T[0, :-1])
         if pc is None: # found optimum
             if phase == 1:
-                if T[0, -1] <= 0:
+                if T[0, -1] <= tol:
                     print("found feasible")
                     phase = 2
                     T = T[1:, :] # cut the first row
@@ -149,7 +153,9 @@ def lp(A, b, c):
                     continue
                 else:
                     print("residual score:", T[0, -1])
+                    #print(T[0, :-1])
                     return None, None, 2
+                    #return collect_solution(T[1:], basic), -T[0, -1], 0
             else:
                 print("found optimum")
                 break
@@ -169,6 +175,9 @@ def lp(A, b, c):
         #print(T)
 
         basic[pr] = pc
+        #if phase == 2:
+        #    print(basic)
+
         #print("objective: {}".format(-T[0, -1]))
         #[print(row) for row in T]
         #print(T.shape)
@@ -177,7 +186,9 @@ def lp(A, b, c):
         print("iteration limit reached")
 
     #print(basic)
-    return collect_solution(T, basic), -T[0, -1], 0
+    x_solve = collect_solution(T, basic)
+    x_solve = x_solve[:num_vars] - x_solve[num_vars:]
+    return x_solve, -T[0, -1], 0
 
 
 def main():
