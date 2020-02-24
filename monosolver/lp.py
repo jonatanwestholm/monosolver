@@ -35,7 +35,7 @@ def select_pivot_column(z):
     if len(positive):
         #print("len(positive):", len(positive))
         #return positive[0] + 1 #
-        return np.random.choice(positive) + 1
+        return np.random.choice(positive)
     else:
         return None
 
@@ -52,21 +52,21 @@ def select_pivot_row(Tc, b):
         return None, 0
 
     ratios = [bi / Tci if Tci > tol else np.inf for Tci, bi in zip(Tc, b)]
-    return np.argmin(ratios) + 1, min(ratios)
+    return np.argmin(ratios), min(ratios)
 
 
 def collect_solution(T, basic):
     num_slack = len(basic)
-    num_vars = len(T[0]) - num_slack - 2
+    num_vars = len(T[0]) - num_slack - 1
     b = T[1:, -1]
 
     solution = np.zeros([num_vars])
 
     for pr, pc in enumerate(basic):
-        if pc <= num_slack: # is a slack variable
+        if pc < num_slack: # is a slack variable
             continue
 
-        solution[pc - num_slack - 1] = T[pr + 1, -1] / T[pr + 1, pc]
+        solution[pc - num_slack] = T[pr + 1, -1] / T[pr + 1, pc]
 
     return solution
 
@@ -97,13 +97,32 @@ def lp(A, b, c):
     # returning the solution: identify basic variables among original variables
     # set nonbasic variables to 0
 
-    num_slack, num_vars = A.shape
-    z_s0 = np.zeros([num_slack])
-    z_s1 = np.zeros([num_slack, 1])
+    phase = 1
+    skip = 2
+    b_sgn = np.sign(b) >= 0
+    sgn = 2*b_sgn - 1
 
-    T1 = np.hstack([np.array([1]), z_s0, c, np.array([0])])
-    T2 = np.hstack([z_s1, np.eye(num_slack), A, b])
-    T = np.vstack([T1, T2])
+    num_slack, num_vars = A.shape
+    z_s = np.zeros([num_slack])
+    z_v = np.zeros([num_vars])
+
+    T1 = np.hstack([z_s, z_v, np.array([0])])
+    T2 = np.hstack([z_s,   c, np.array([0])])
+    T3 = np.hstack([np.eye(num_slack), A, b])
+    T3 = T3 * sgn
+    #print(T3)
+
+    #print(T3[:, num_slack:-1] * (1 - b_sgn))
+    #print(T3[:, -1] * (1 - b_sgn).T)
+    T1[num_slack:-1] = np.sum(T3[:, num_slack:-1] * (1 - b_sgn), axis=0)
+    T1[-1] = np.sum(T3[:, -1] * (1 - b_sgn).T)
+    #exit(0)
+    #return 1, 1, 1
+
+    T = np.vstack([T1, T2, T3])
+    #print(T)
+    #exit(0)
+    #return 1, 1, 1
 
     #dbg(T)
 
@@ -112,29 +131,44 @@ def lp(A, b, c):
 
     #for i in range(100000):
     while True:
-        b = T[1:, -1]
+        #print(T)
+
+        b = T[skip:, -1]
         if np.any(b < -1e-8):
             print(b)
             raise Exception("b < 0")
 
-        pc = select_pivot_column(T[0, 1:])
+        pc = select_pivot_column(T[0, :-1])
         if pc is None: # found optimum
-            print("found optimum")
-            break
-        #print("pc:", pc)
+            if phase == 1:
+                if T[0, -1] <= 0:
+                    print("found feasible")
+                    phase = 2
+                    T = T[1:, :] # cut the first row
+                    skip = 1
+                    continue
+                else:
+                    print("residual score:", T[0, -1])
+                    return None, None, 2
+            else:
+                print("found optimum")
+                break
         #print(pc, "{0:.5f}".format(T[0, pc]))
 
-        pr, pivot_dist = select_pivot_row(T[1:, pc], T[1:, -1])
+
+        pr, pivot_dist = select_pivot_row(T[skip:, pc], T[skip:, -1])
         if pr is None: # unbounded
-            return None, np.inf
+            return None, np.inf, 3
         #if pivot_dist == 0.0: # will not increase objective
         #    continue
+        #print("pc:", pc)
         #print("pr:", pr)
+        #print()
 
-        T = pivot(T, pc, pr)
+        T = pivot(T, pc, pr + skip)
         #print(T)
 
-        basic[pr - 1] = pc
+        basic[pr] = pc
         #print("objective: {}".format(-T[0, -1]))
         #[print(row) for row in T]
         #print(T.shape)
@@ -142,174 +176,23 @@ def lp(A, b, c):
     else:
         print("iteration limit reached")
 
-    return collect_solution(T, basic), -T[0, -1], basic
-
-
-'''
-def phase1(A, b):
-    """
-    find a feasible solution to 
-    Ax <= b
-    x >= 0
-    """
-
-    sgn = 2 * (np.sign(b) >= 0) - 1  # np.sign(0) = 0, need 1
-    A_prim = sgn.T * A
-    b_prim = sgn * b
-    c_prim = np.sum(A_prim, axis=1)
-    d_prim = np.sum(b_prim)
-
-    x_bfs, val, basic = phase2(A_prim, b_prim, c_prim)
-
-    tol = 1e-8
-    if val + d_prim < -tol: # infeasible
-        return None
-
-    return basic
-
-
-def phase1(A, b, c):
-    """
-    find a feasible solution to 
-    Ax <= b
-    x >= 0
-    """
-
-    num_constr, num_vars = A.shape
-    I = np.eye(num_constr)
-
-    dbg("b:\n", b)
-    c_ext = np.concatenate([np.zeros([num_vars]), -1 * np.ones([num_constr])])
-    A_ext = np.hstack([A, -I])
-    z_init = -b * (b < 0)
-    dbg("z_init:\n", z_init)
-    x_relaxed = np.concatenate([np.zeros([num_vars, 1]), z_init])
-    dbg("x_relaxed:\n", x_relaxed)
-    A_prim, b_prim, c_prim, d_prim = phase1_5(A_ext, b, c_ext, x_relaxed)
-    #c_prim[-len(c_prim) // 2:] = 0
-    dbg("A_prim:\n", A_prim)
-    dbg("b_prim:\n", b_prim)
-    dbg("c_prim:\n", c_prim)
-    dbg("d_prim:\n", d_prim)
-
-    x_bfs, val = phase2(A_prim, b_prim, c_prim)
-
-    dbg("x_bfs:", x_bfs, "val:", val, "d:", d_prim)
-    #exit(0)
-
-    # c_ext * [0 z] = c_prim * x_bfs + d_prim = val + d_prim
-
-    tol = 1e-8
-    if val + d_prim < -tol: # infeasible
-        return None
-
-    return x_bfs[:num_vars]
-'''
-
-
-'''
-def phase1_5(A, b, c, x_bfs):
-    """
-    Given a basic feasible solution x_bfs,
-    perform variable substitution so that
-    
-    A'x' <= b'
-    x' >= 0
-    b' >= 0.
-
-    Also transform c to c' and add constant d, 
-    to preserve optimum.
-
-    A' = [A, -A;
-          0, I]
-    b' = [b - A*x_bfs;
-          x_bfs]
-    c' = [c, -c]
-    d = c*x_bfs.
-
-    Effectively what we're doing is renaming
-
-    x = x_positive - x_negative + x_bfs
-    x_positive, x_negative >= 0
-    where 
-    x >= 0  ->  x_positive - x_negative + x_bfs ->
-    -x_positive + x_negative <= x_bfs  -> x_negative <= x_bfs
-
-    also
-    Ax <= b  ->  A(x_positive - x_negative + x_bfs) <= b  ->
-    [A, -A] * [x_positive; x_negative] <= b
-
-    """  
-
-    num_constr, num_vars = A.shape
-
-    y_bfs = np.dot(A, x_bfs).reshape([-1, 1])
-    dbg("y_bfs:", y_bfs)
-    b_prim = b - y_bfs
-    dbg("b_prim:", b_prim)
-    b_prim = np.vstack([b_prim, x_bfs.reshape([-1, 1])])
-    dbg("b_prim:", b_prim)
-
-    A_prim = np.hstack([A, -A])
-    I = np.eye(num_vars)
-    I_prim = np.hstack([-I, I])
-    A_prim = np.vstack([A_prim, I_prim])
-
-    c_prim = np.hstack([c, -c])
-    d = np.dot(c, x_bfs)
-
-    return A_prim, b_prim, c_prim, d
-
-
-def lp(A, b, c, d0=0):
-    """
-    maximize c * x 
-    such that
-    Ax <= b
-    x >= 0
-    """
-    print(A.shape)
-    print(b.shape)
-    print(c.shape)
-
-    num_constr, num_vars = A.shape
-
-    x_bfs = phase1(A, b, c)
-    if x_bfs is None:
-        return None, None, 2 # infeasible
-
-    dbg("x_bfs:", x_bfs)
-
-    dbg("b", b)
-    A, b, c, d = phase1_5(A, b, c, x_bfs)
-    dbg(A)
-    dbg(b)
-    dbg(c)
-    dbg(d)
-
-    x_opt, val = phase2(A, b, c)
-    if x_opt is None:
-        return None, np.inf, 3 # unbounded
-
-    x_opt = x_opt[:num_vars] - x_opt[-num_vars:]
-    x_opt = x_opt + x_bfs
-    return x_opt, val + d0, 0 # optimal
-'''
+    #print(basic)
+    return collect_solution(T, basic), -T[0, -1], 0
 
 
 def main():
     global debug
     debug = False
 
-    all_tests = ["basic", "basic_2", "basic_3",
+    all_tests = ["basic_1", "basic_2", "basic_3",
                  "basic_4", "basic_5", "basic_6",
-                  "infeasible", "infeasible_2",
+                  "infeasible_1", "infeasible_2",
                   "unbounded"]
 
-    #test_cases = ["basic_6"]
+    #test_cases = ["basic_3"]
     test_cases = all_tests
 
-    if "basic" in test_cases:
+    if "basic_1" in test_cases:
         A = np.array([[2, 1], [1, 2]])
         b = np.array([[1], [1]])
         c = np.array([1, 1])
@@ -348,7 +231,7 @@ def main():
     if "basic_5" in test_cases:
         # this should take just two pivots
         A = np.array([[-1, 1], [1, -1], [1, 1]])
-        b = np.array([[1], [1], [10000000]])
+        b = np.array([[1], [1], [10]])
         c = np.array([1, 1])
         print("Should be OPTIMAL")
         x_opt, opt_val, status = lp(A, b, c)
@@ -364,7 +247,7 @@ def main():
         print(x_opt, opt_val, status2str[status])
         print()
 
-    if "infeasible" in test_cases:
+    if "infeasible_1" in test_cases:
         A = np.array([[2, 1], [1, 2], [1, 1]])
         b = np.array([[1], [1], [-1]])
         c = np.array([1, 1])
