@@ -1,4 +1,5 @@
 import numpy as np
+np.set_printoptions(precision=3)
 
 # or-tools convention
 status2str = ["OPTIMAL", "FEASIBLE", "INFEASIBLE", "UNBOUNDED", 
@@ -8,6 +9,9 @@ debug = False
 def dbg(s0, *s):
     if debug:
         print(s0, *s)
+
+def density(T):
+    return np.count_nonzero(T) / np.size(T)
 
 def pivot(T, pc, pr):
     #print("pc:", pc, "pr:", pr)
@@ -29,7 +33,7 @@ def select_pivot_column(z):
     else:
         return None
     """
-    tol = 0 #1e-8
+    tol = 1e-8
 
     positive = np.where(z > tol)[0]
     if len(positive):
@@ -49,10 +53,10 @@ def select_pivot_row(Tc, b):
 
     #print(Tc)
     if all(Tc <= 0): # no roof over our head - to the stars!
-        return None, 0
+        return np.inf, None
 
     ratios = [bi / Tci if Tci > tol else np.inf for Tci, bi in zip(Tc, b)]
-    return np.argmin(ratios), min(ratios)
+    return min(ratios), np.argmin(ratios)
 
 
 def collect_solution(T, basic):
@@ -110,6 +114,7 @@ def lp(A, b, c):
     T2 = np.hstack([z_s,   c,  -c, np.array([0])])
     T3 = np.hstack([np.eye(num_slack), A, -A, b])
     T3 = T3 * sgn
+    #T3[:, num_slack:] = T3[:, num_slack:] * sgn
     #print(T3)
     #print(b)
 
@@ -122,9 +127,18 @@ def lp(A, b, c):
     #return 1, 1, 1
 
     T = np.vstack([T1, T2, T3])
+    #print(A.shape)
+    #print(c)
     #print(T)
     #exit(0)
     #return 1, 1, 1
+
+    def phase_shift(T):
+        print("found feasible")
+        phase = 2
+        T = T[1:, :] # cut the first row
+        skip = 1
+        return T, phase, skip
 
     #dbg(T)
 
@@ -133,23 +147,21 @@ def lp(A, b, c):
 
     tol = 1e-8
 
-    #for i in range(100000):
-    while True:
-        #print(T)
+    #while True:
+    for i in range(1000000):
+        print(T)
 
         b = T[skip:, -1]
         if np.any(b < -1e-8):
             print(b)
             raise Exception("b < 0")
 
-        pc = select_pivot_column(T[0, :-1])
-        if pc is None: # found optimum
+        #pc = select_pivot_column(T[0, :-1])
+        pcs = np.where(T[0, :-1] > tol)[0]
+        if not len(pcs): # found optimum
             if phase == 1:
                 if T[0, -1] <= tol:
-                    print("found feasible")
-                    phase = 2
-                    T = T[1:, :] # cut the first row
-                    skip = 1
+                    T, phase, skip = phase_shift(T)
                     continue
                 else:
                     print("residual score:", T[0, -1])
@@ -161,20 +173,39 @@ def lp(A, b, c):
                 break
         #print(pc, "{0:.5f}".format(T[0, pc]))
 
-
-        pr, pivot_dist = select_pivot_row(T[skip:, pc], T[skip:, -1])
-        if pr is None: # unbounded
+        prs = [select_pivot_row(T[skip:, pc], T[skip:, -1]) for pc in pcs[-1:]]
+        if max(prs)[0] == np.inf: # unbounded
+            #print(T)
+            #print(pcs)
+            #print(prs)
             return None, np.inf, 3
-        #if pivot_dist == 0.0: # will not increase objective
-        #    continue
-        #print("pc:", pc)
-        #print("pr:", pr)
-        #print()
+
+        increment = [(pd * T[0, pc], pc, pr) for (pd, pr), pc in zip(prs, pcs[-1:])]
+        best_incr, pc, pr = max(increment)
+
+        #pr, pivot_dist = select_pivot_row(T[skip:, pc], T[skip:, -1])
+        #if pr is None: # unbounded
+        #    return None, np.inf, 3
+
+        print("pc:", pc)
+        print("pr:", pr)
+        print()
 
         T = pivot(T, pc, pr + skip)
+        #if best_incr > tol:
+        #    print("i={0:d}, objective: {1:.3f}".format(i, -T[0, -1]))
+        #    print("density: {0:.4f}\n".format(density(T)))
         #print(T)
+        #print("density:", density(T))
+
 
         basic[pr] = pc
+
+        if phase == 1 and T[0, -1] <= tol:
+            print(T)
+            T, phase, skip = phase_shift(T)
+            continue
+
         #if phase == 2:
         #    print(basic)
 
@@ -186,6 +217,7 @@ def lp(A, b, c):
         print("iteration limit reached")
 
     #print(basic)
+    print("num iterations:", i)
     x_solve = collect_solution(T, basic)
     x_solve = x_solve[:num_vars] - x_solve[num_vars:]
     return x_solve, -T[0, -1], 0
@@ -196,12 +228,13 @@ def main():
     debug = False
 
     all_tests = ["basic_1", "basic_2", "basic_3",
-                 "basic_4", "basic_5", "basic_6",
+                 "basic_4", "basic_5", "basic_6", 
+                 "basic_7",
                   "infeasible_1", "infeasible_2",
                   "unbounded"]
 
-    #test_cases = ["basic_3"]
-    test_cases = all_tests
+    test_cases = ["basic_7"]
+    #test_cases = all_tests
 
     if "basic_1" in test_cases:
         A = np.array([[2, 1], [1, 2]])
@@ -250,17 +283,28 @@ def main():
         print()
 
     if "basic_6" in test_cases:
-        A = np.array([[-1, 1], [1, -1], [1, 1]])
-        b = np.array([[1], [1], [1]])
+        A = np.array([[-1, 1], [1, -1], [1, 1], [-1, 0], [0, -1]])
+        b = np.array([[1], [1], [1], [0], [0]])
         c = np.array([1, 1])
         print("Should be OPTIMAL")
         x_opt, opt_val, status = lp(A, b, c)
         print(x_opt, opt_val, status2str[status])
         print()
 
+    if "basic_7" in test_cases:
+        A = np.array([[-2, -1], [-1, -2], [-1, 0], [0, -1]])
+        b = np.array([[-1], [-1], [0], [0]])
+        #A = np.array([[-2, -1], [-1, -2]])
+        #b = np.array([[-1], [-1]])
+        c = np.array([-1, -1])
+        print("Should be OPTIMAL")
+        x_opt, opt_val, status = lp(A, b, c)
+        print(x_opt, opt_val, status2str[status])
+        print()
+
     if "infeasible_1" in test_cases:
-        A = np.array([[2, 1], [1, 2], [1, 1]])
-        b = np.array([[1], [1], [-1]])
+        A = np.array([[2, 1], [1, 2], [1, 1], [-1, 0], [0, -1]])
+        b = np.array([[1], [1], [-1], [0], [0]])
         c = np.array([1, 1])
         print("Should be INFEASIBLE")
         x_opt, opt_val, status = lp(A, b, c)
@@ -268,8 +312,8 @@ def main():
         print()
 
     if "infeasible_2" in test_cases:
-        A = np.array([[2, 1], [1, 2], [-1, -1]])
-        b = np.array([[1], [1], [-1]])
+        A = np.array([[2, 1], [1, 2], [-1, -1], [-1, 0], [0, -1]])
+        b = np.array([[1], [1], [-1], [0], [0]])
         c = np.array([1, 1])
         print("Should be INFEASIBLE")
         x_opt, opt_val, status = lp(A, b, c)
@@ -277,8 +321,8 @@ def main():
         print()
 
     if "unbounded" in test_cases:
-        A = np.array([[-1, -1]])
-        b = np.array([[-1]])
+        A = np.array([[-1, -1], [-1, 0], [0, -1]])
+        b = np.array([[-1], [0], [0]])
         c = np.array([1, 1])
         print("Should be UNBOUNDED")
         x_opt, opt_val, status = lp(A, b, c)
