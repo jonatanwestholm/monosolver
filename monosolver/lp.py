@@ -1,5 +1,5 @@
 import numpy as np
-np.set_printoptions(precision=3)
+np.set_printoptions(precision=3, suppress=True)
 
 # or-tools convention
 status2str = ["OPTIMAL", "FEASIBLE", "INFEASIBLE", "UNBOUNDED", 
@@ -149,7 +149,8 @@ def lp(A, b, c):
 
     #while True:
     for i in range(1000000):
-        print(T)
+        dbg(T)
+        #[print([float("{0:.3f}".format(elem)) for elem in row]) for row in T]
 
         b = T[skip:, -1]
         if np.any(b < -1e-8):
@@ -187,9 +188,9 @@ def lp(A, b, c):
         #if pr is None: # unbounded
         #    return None, np.inf, 3
 
-        print("pc:", pc)
-        print("pr:", pr)
-        print()
+        dbg("pc:", pc)
+        dbg("pr:", pr)
+        dbg("")
 
         T = pivot(T, pc, pr + skip)
         #if best_incr > tol:
@@ -202,7 +203,7 @@ def lp(A, b, c):
         basic[pr] = pc
 
         if phase == 1 and T[0, -1] <= tol:
-            print(T)
+            dbg(T)
             T, phase, skip = phase_shift(T)
             continue
 
@@ -233,8 +234,8 @@ def main():
                   "infeasible_1", "infeasible_2",
                   "unbounded"]
 
-    test_cases = ["basic_7"]
-    #test_cases = all_tests
+    #test_cases = ["unbounded"]
+    test_cases = all_tests
 
     if "basic_1" in test_cases:
         A = np.array([[2, 1], [1, 2]])
