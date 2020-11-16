@@ -125,6 +125,8 @@ def lp(A, b, c):
     T1[-1] = np.sum(T3[:, -1] * (1 - b_sgn).T)
     #exit(0)
     #return 1, 1, 1
+    print(T3)
+    print(T1)
 
     T = np.vstack([T1, T2, T3])
     #print(A.shape)
@@ -226,7 +228,7 @@ def lp(A, b, c):
 
 def main():
     global debug
-    debug = False
+    debug = True
 
     all_tests = ["basic_1", "basic_2", "basic_3",
                  "basic_4", "basic_5", "basic_6", 
@@ -234,8 +236,8 @@ def main():
                   "infeasible_1", "infeasible_2",
                   "unbounded"]
 
-    #test_cases = ["unbounded"]
-    test_cases = all_tests
+    test_cases = ["basic_3"]
+    #test_cases = all_tests
 
     if "basic_1" in test_cases:
         A = np.array([[2, 1], [1, 2]])
